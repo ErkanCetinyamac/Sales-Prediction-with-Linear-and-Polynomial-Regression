@@ -1,0 +1,452 @@
+---
+
+title: " Basit Doğrusal Regresyon  ve Polinomsal Regresyon Analiz Detayı "
+output: html_document
+Isim soy isim: " Erkan Çetinyamaç "
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+                           # Analiz Detayı 
+                           
+                           
+Satış (Sales) değişkenini bağımlı değişken olarak alarak TV, Radyo ve Gazeteye verilen reklam harcamalarının satışları nasıl etkilediği linear ve polinomsal regresyon modelleri kullanarak tahmin edilecek. Analizimizin temel amacı satış miktarını tahmin etmek. Bunun için regresyon analizini tercih ettim. 
+
+
+basit linear regresyon ve polinomsal regresyon modellerinin performansları ölçülecek ve elimizdeki durum için en uygun modele karar vereceğiz. Bunun yanı sıra kullandığımız modeller regresyon analizinin varsayımlarını karşılıyor mu diye bunların gerekli testlerini yapacağız.
+
+
+
+
+
+
+
+İsterseniz uygulama kısmına yavaş yavaş geçelim.
+
+Aşağıdaki kod bloğunda çalışmamızda ihtiyaç duyabileceğimiz kütüphaneleri çağırıyoruz.
+
+```{r}
+library(caret)
+library(tidyverse)
+library(AppliedPredictiveModeling)
+library(MASS)
+library(ISLR)
+library(PerformanceAnalytics)
+library(funModeling)
+library(dplyr)
+library(gvlma)
+library(car)
+library(ggplot2)
+library(GGally)
+library(outliers)
+library(performance)
+library(sjstats)
+library(olsrr)
+library(lmtest)
+library(rcompanion)
+library(DataExplorer)
+```
+
+
+Analizlerimizde kullanacağımız Advertesing veri setini yüklüyoruz.
+Veri setine aşağıdaki linkten ulaşabilirsiniz.
+
+Link: https://www.kaggle.com/bumba5341/advertisingcsv
+
+```{r}
+
+df<- Advertising
+
+df$X1<- NULL    #index feature' ını verisetimizden çıkarıyoruz çünkü bağımsız değişkenlerden biri index olmayacağı için.
+
+```
+
+Veri setimizi tanımak adına kısa bir ön bakış yapıyoruz.
+
+Veri setimiz 200 satır ve 4 sutündan oluşmakta.
+Sales değişkeni regresyon analizlerinde bağımlı değişken olacak.
+
+```{r}
+
+glimpse(df)
+
+
+```
+
+
+Değişkenlerimizin ortalama, medyan ve quartile değerleri aşağıdaki gibidir.
+
+TV reklam harcamaları değişkenin min ve max değerleri arasındaki fark diğer değişkenlerinkine göre gözümüze batıyor.
+
+```{r}
+summary(df)
+
+```
+
+
+Bu kod bloğunda ise değişkenlerimizin standart sapma, çarpıklık ve basıklık değerlerini inceliyoruz.
+
+```{r}
+profiling_num(df)
+
+```
+
+Veri setimizde eksik değer var mı diye kontrol ediyoruz. Görüldüğü üzere eksik gözlemimiz yok.
+
+```{r}
+colSums(is.na(df)) 
+```
+
+
+
+Satış değişkenimize ait gözlemlerin dağılımı normal dağılma uyuyor mu diye kontrol ediyoruz.
+
+```{r}
+plotNormalHistogram(df$Sales)
+
+```
+
+Bu kısımda ise verisetimizdeki tüm değişkenlerinin dağılımı hakkında ön izlenim edinmek adına görselleştirme yapıyoruz.
+
+```{r}
+plot_num(df)
+```
+Regresyon analizimize geçmeden önce elimizdeki değişkenlerinin birbiri ile olan ilişkisini incelemek adına scatter plotlarına ve korelasyon maplerine bakacağız.
+
+
+Scatter plotlar (saçılım grafikleri) ile başlıyoruz. Plotlarda görüldüğü üzere satış bağımlı değişkenimizle TV,Radyo bağımsız değişkenlerinin arasında doğrusal bir ilişki olduğu gözümüze çarpıyor fakat gazete (Newspaper) değişkeniyle olan ilişkisi doğrusal bir izlenim vermiyor.
+
+```{r}
+plot(Sales ~ TV, data = df,
+     pch = 20, cex = 1.5, main = "Satışlar vs TV Reklam Harcamaları")
+
+plot(Sales ~ Radio, data = df,
+     pch = 20, cex = 1.5, main = "Satışlar vs Radyo Reklam Harcamaları")
+
+plot(Sales ~ Newspaper, data = df,
+     pch = 20, cex = 1.5, main = "Satışlar vs Gazete Reklam Harcamaları")
+
+
+```
+
+
+
+
+
+
+Değişkenlerimizin birbiri ile olan korelasyonlarını incelediğimiz kısıma geçiyoruz.
+Korelasyon genellikle iki nicel değişken arasındaki doğrusal ilişkinin bir ölçüsü olarak tanımlanır. Bu bölümümüz regresyon modellerimiz için seçeceğimiz bağımsız değişkeni belirlemek adına büyük önem taşıyor. Satış (Sales) değişkenimizle olan korelasyon oranı 1'e en yakın olan değişkeni bağımsız değişken olarak almayı amaçlıyoruz. Aşağıdaki korelasyon tablolarından görüldüğü üzere modelimize bağımsız değişken olarak "TV" değişkenini seçmenin akıllı bir tercih olacağını çıkarımını yapıyoruz.
+
+```{r}
+
+plot_correlation(df, type = "c")
+
+chart.Correlation(df, histogram =  TRUE, pch = 20)
+
+
+
+
+```
+
+
+Y bağımlı değişken olarak "Sales" ve X bağımsız değişkeni olaran "TV" değişkenlerini seçip basit doğrusal regresyon modelimizi kuruyoruz. Modelin temel amacı bağımlı ve bağımsız değişken arasındaki ilişkiyi ifade edecek doğrusal bir fonksiyon bulmaktır.
+
+
+
+```{r}
+
+Basit_Dogrusal_Model <- lm(Sales~ TV  , data = df)
+
+summary(Basit_Dogrusal_Model)
+
+```
+
+
+
+
+Modelimizin sonucunda Y şapka (Sales Tahmin) değerlerini ifade eden regresyon doğrusu aşağıdaki gibidir.
+
+```{r}
+# ggplot(df, aes(x=TV, y=Sales)) +
+#   geom_point() +
+#   stat_smooth(method = lm)
+
+
+ggplot(Basit_Dogrusal_Model, aes(TV, Sales)) +
+  geom_point() +
+  stat_smooth(method = lm, se = FALSE) +
+  geom_segment(aes(xend = TV, yend = .fitted), color = "red", size = 0.3)
+```
+
+
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(Basit_Dogrusal_Model)
+Basit_Dogrusal_Model
+```
+
+
+
+
+
+Varsayımları tek bir fonksiyonda kontrol
+```{r}
+
+gvlma(x=Basit_Dogrusal_Model)
+
+```
+
+varsayım testleri
+```{r}
+
+ols_test_normality(df$Sales)
+
+
+```
+
+
+```{r}
+ols_test_breusch_pagan(Basit_Dogrusal_Model)
+```
+
+
+```{r}
+
+durbinWatsonTest(Basit_Dogrusal_Model)
+```
+
+Tahmin
+
+```{r}
+GozlemVsTahmin <- data.frame(
+  Y_Gercek = head(df$Sales, 10),
+  Y_Tahmin = head(predict(Basit_Dogrusal_Model),10)
+  
+)
+
+GozlemVsTahmin
+```
+
+
+Polinomsal Regresyon
+
+
+```{r}
+
+
+Polinomsal_Model<- lm(Sales ~ poly(TV,degree = 2 , raw = T) 
+                            ,data =df )
+
+summary(Polinomsal_Model)
+
+
+
+```
+
+
+
+Polinomsal Regresyon ve Basit Doğrusal Regresyon Grafiklerinin Karşılaştırılması
+
+```{r}
+
+
+
+lineer_plot<- ggplot(data=df, aes(TV, Sales)) +
+  geom_point() +
+  geom_smooth(method = "lm" , formula =y~x) +
+    ggtitle("Basit Doğrusal Regresyon")
+
+polinomsal_plot<- ggplot(data=df, aes(TV,Sales)) +
+       geom_point() + 
+       geom_smooth(method="lm", formula=y~I(x)+I(x^2))+
+         ggtitle("Polinomsal Regresyon") 
+
+lineer_plot
+polinomsal_plot
+
+```
+
+
+
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(Polinomsal_Model)
+
+```
+
+
+
+
+```{r}
+gvlma(x=Polinomsal_Model)
+```
+
+
+
+
+
+
+Polinomsal Regresyon Varsayımlarının Testleri
+
+
+
+```{r}
+ols_test_score(Polinomsal_Model)
+
+```
+
+
+```{r}
+
+ols_test_breusch_pagan(Polinomsal_Model)
+
+```
+
+
+```{r}
+durbinWatsonTest(Polinomsal_Model)
+```
+Tahmin
+
+```{r}
+GozlemVsTahminPol <- data.frame(
+  Y_Gercek = tail(df$Sales, 10),
+  Y_Tahmin = tail(predict(Polinomsal_Model),10)
+  
+)
+
+GozlemVsTahminPol
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+vif(lm_model)
+df$leverage <- hatvalues(lm_model)
+ggplot(df, aes(Sales, leverage)) + geom_point() + ylim(0,1) + xlab('Case')
+# list the observations with large hat value
+fit.hat <- hatvalues(lm_model)
+id.fit.hat <- which(fit.hat > (2*(4+1)/nrow(df))) ##  hatvalue > #2*(k+1)/n
+fit.hat[id.fit.hat]
+
+
+df$studres <- studres(lm_model) #adds the studendized residuals to our dataframe 
+ggplot(df, aes(Sales ,studres)) + geom_point() + geom_hline(color="red", yintercept=0) + xlab('Case')
+```
+
+
+
+tahmin - karşılaştırma
+
+```{r}
+
+# table(head(df$Sales, 5))
+# head(predict(Basit_Dogrusal_Model),5)
+
+
+GozlemVsTahmin <- data.frame(
+  Y_Gercek = head(df$Sales, 10),
+  Y_Tahmin = head(predict(Basit_Dogrusal_Model),10)
+  
+)
+
+GozlemVsTahmin
+
+
+# plot(ActualVsPredicted$Y,ActualVsPredicted$Y_Hat)
+
+
+
+
+ModelinGormedigiYeniGozlemler <- data.frame (TV=c(120,90,133),Radio = c(45,23,55))
+# test=head(df$TV,15)
+predict(Basit_Dogrusal_Model,ModelinGormedigiYeniGozlemler )
+
+predict(Basit_Dogrusal_Model, ModelinGormedigiYeniGozlemler, interval = "confidence", level = 0.95)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Normalization
+```{r}
+
+df$TV <-(df$TV-min(df$TV))/(max(df$TV)-min(df$TV))
+
+df$Sales <-(df$Sales-min(df$Sales))/(max(df$Sales)-min(df$Sales)) 
+                                     
+df$Radio <-(df$Radio-min(df$Radio))/(max(df$Radio)-min(df$Radio))
+
+df$Newspaper <-  (df$Newspaper-min(df$Newspaper))/(max(df$Newspaper)-min(df$Newspaper))
+                            
+```
+
+Küp Transform
+
+```{r}
+
+ggplot(df, aes(TV, Sales)) +
+  geom_point() +
+  stat_smooth(method = lm ,aes(col = "blue"), se = F)
+
+plot(Basit_Dogrusal_Model)+
+abline(Basit_Dogrusal_Model, lwd=3, col="red")
+
+T_cub = sign(df) * abs(df)^(1/3)  
+
+lm_model3 <- lm ( Sales ~ .,data= T_cub)
+
+summary(lm_model3)
+plot(lm_model3)
+gvlma(x=lm_model3)
+
+
+
+lm_model4 <- lm(Sales ~ poly(TV , 2) + poly(Newspaper , 2) + poly(Radio,2)   , data = T_cub)
+
+gvlma(x=lm_model4)
+
+Polinomsal_Model<- lm(Sales ~ poly(TV , 2) + 
+                          poly(Radio,2) , data = df)
+
+Polinomsal_Model<- lm(log1p(Sales) ~ poly(log1p(TV) , 2) + 
+                          poly(log1p(Radio),2) , data = df)
+
+Polinomsal_Model<- lm(Sales ~ TV + I(TV^2) 
+                           , data = df)
+```
+
+
+
+
+
+
